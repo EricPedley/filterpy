@@ -27,6 +27,7 @@ from numpy import dot, zeros, eye
 import scipy.linalg as linalg
 from filterpy.stats import logpdf
 from filterpy.common import pretty_str, reshape_z
+import cv2
 
 
 class ExtendedKalmanFilter(object):
@@ -251,7 +252,7 @@ class ExtendedKalmanFilter(object):
         self._likelihood = None
         self._mahalanobis = None
 
-    def update(self, z, HJacobian, Hx, R=None, args=(), hx_args=(),
+    def update(self, z, keypoints, cam_mat, dist_coeffs, R=None, args=(), hx_args=(),
                residual=np.subtract):
         """ Performs the update innovation of the extended Kalman filter.
 
@@ -314,14 +315,18 @@ class ExtendedKalmanFilter(object):
         if np.isscalar(z) and self.dim_z == 1:
             z = np.asarray([z], float)
 
-        H = HJacobian(self.x, *args)
+        cv_jacobian = np.empty((len(z), 24))
+        rvec, tvec = self.x[3:], self.x[:3]
+        keypoints_expected_2d = cv2.projectPoints(keypoints, rvec, tvec, cam_mat, dist_coeffs, jacobian=cv_jacobian)[0].squeeze()
+        hx =  keypoints_expected_2d.reshape((-1,))
+        H = np.hstack([cv_jacobian[:,3:6],cv_jacobian[:, :3]])
 
         PHT = dot(self.P, H.T)
         self.S = dot(H, PHT) + R
         self.SI = linalg.inv(self.S)
         self.K = PHT.dot(self.SI)
 
-        hx = Hx(self.x, *hx_args)
+
         self.y = residual(z, hx)
         self.x = self.x + dot(self.K, self.y)
 
